@@ -1,0 +1,181 @@
+pip install yfinance
+import numpy as np
+import pandas as pd
+from datetime import datetime
+import yfinance as yf
+import matplotlib.pyplot as plt
+import plotly.graph_objects as go
+import seaborn as sns
+%matplotlib inline
+
+start_date = datetime(2021, 1, 1)
+end_date = datetime(2022, 2, 4)
+  
+# get the data
+data = yf.download('RELAXO.NS', start = start_date,
+                   end = end_date)
+
+# Setting index as Date column
+data['Date']=data.index
+
+# Setting index as default numbers
+data.reset_index(drop = True, inplace = True)
+
+# Setting index as sequence column
+data['Sequence']=data.index
+
+
+data['50_DMA'] = data['Close'].rolling(50).mean()
+data['200_DMA'] = data['Close'].rolling(200).mean()
+data['300_DMA'] = data['Close'].rolling(300).mean()
+data['Date']=pd.to_datetime(data['Date'])
+data['pct_change']=data['Close'].pct_change().mul(100).round(2)
+
+# Finding Pivot points that can be used later as Resistance & Support
+data["Resistance"] = np.where(data["Close"]-data["Close"].shift(1)>0, np.where(data["Close"]-data["Close"].shift(2)>0,
+                     np.where(data["Close"]-data["Close"].shift(3)>0, 
+                     np.where(data["Close"]-data["Close"].shift(4)>0,
+                     np.where(data["Close"]-data["Close"].shift(-1)>0,
+                     np.where(data["Close"]-data["Close"].shift(-2)>0,
+                     np.where(data["Close"]-data["Close"].shift(-3)>0,
+                     np.where(data["Close"]-data["Close"].shift(-4)>0,        
+                                                  data["Close"],0),0),0),0),0),0),0),0)
+data["Support"] = np.where(data["Close"]-data["Close"].shift(1)<0, np.where(data["Close"]-data["Close"].shift(2)<0,
+                     np.where(data["Close"]-data["Close"].shift(3)<0, 
+                     np.where(data["Close"]-data["Close"].shift(4)<0,
+                     np.where(data["Close"]-data["Close"].shift(-1)<0,
+                     np.where(data["Close"]-data["Close"].shift(-2)<0,
+                     np.where(data["Close"]-data["Close"].shift(-3)<0,
+                     np.where(data["Close"]-data["Close"].shift(-4)<0,        
+                                                  data["Close"],0),0),0),0),0),0),0),0)
+# Filtering out the data where pivot points are coming for both Support & Resistance
+
+# data_pivot = data[(data['Resistance']>0) | (data['Support']>0)]
+
+data_pivot_R = data[data['Resistance']>0]
+
+# Similarly creating data for support pivots
+data_pivot_S = data[data['Support']>0]
+
+# Re-Setting the index for data_pivot_R & data_pivot_S
+
+data_pivot_R.reset_index(drop = True, inplace = True)
+
+data_pivot_S.reset_index(drop = True, inplace = True)
+# Function to identify Slope for Resistance & Support
+
+a = len(data_pivot_R)-1
+List_2 =[]
+List_x =[]
+List_y =[]
+def slope(x):
+    for i in range(a):
+        List_1 =[]
+        x1 = data_pivot_R['Sequence'].iloc[i]
+        y1 = data_pivot_R['Close'].iloc[i]
+        for j in range(i,a):
+            x2 = data_pivot_R['Sequence'].iloc[j+1]
+            y2 = data_pivot_R['Close'].iloc[j+1]
+            slope = round((y2-y1)/(x2-x1),1)
+            if (np.any(np.isin(slope,List_1)) == True or np.any(np.isin(slope-0.1,List_1)) ==True or np.any(np.isin(slope+0.1,List_1)) == True or np.any(np.isin(slope-0.2,List_1)) ==True or np.any(np.isin(slope+0.2,List_1)) ==True ) and slope<5 and y2>y1: 
+                List_2.append(slope)
+                List_x.append(x1)
+                List_y.append(y1)
+            elif y2>y1:
+                List_1.append(slope)
+    return List_2, List_x, List_y
+
+
+# Second function for Support
+b = len(data_pivot_S)-1
+List_2s =[]
+List_xs =[]
+List_ys =[]
+def slopes(x):
+    for i in range(b):
+        List_1s =[]
+        x1 = data_pivot_S['Sequence'].iloc[i]
+        y1 = data_pivot_S['Close'].iloc[i]
+        for j in range(i,b):
+            x2 = data_pivot_S['Sequence'].iloc[j+1]
+            y2 = data_pivot_S['Close'].iloc[j+1]
+            slopes = round((y2-y1)/(x2-x1),1)
+            if (np.any(np.in1d(slopes,List_1s)) == True or np.any(np.in1d(slopes-0.1,List_1s)) == True or np.any(np.in1d(slopes-0.2,List_1s)) == True or np.any(np.in1d(slopes+0.1,List_1s)) == True or np.any(np.in1d(slopes+0.2,List_1s)) == True) and slopes<5 and y1>y2: 
+                List_2s.append(slopes)
+                List_xs.append(x1)
+                List_ys.append(y1)
+            elif y1>y2:
+                List_1s.append(slopes)
+    return List_2s, List_xs, List_ys
+    
+    # Creating a dataframe with the above function
+slope(data_pivot_R)
+slopes(data_pivot_S)
+data_slope_1 = pd.DataFrame(list(zip(List_x,List_y,List_2)), columns =['Sequence','Close','Slope'])
+
+
+# adding the data recieved for support
+List_Supp.clear()
+List_Supp = List_xs+List_ys+List_2s
+if List_Supp == []:
+    data_slope
+else:
+    data_slope_2 = pd.DataFrame(list(zip(List_xs,List_ys,List_2s)), columns =['Sequence','Close','Slope'])
+    data_slope = data_slope_1.append(data_slope_2)
+
+# Creating one row per sequence so that no issue arrives on joining it with original database    
+data_slope['Rank']= data_slope.groupby('Sequence')['Slope'].rank('first')
+data_slope_filtered = data_slope[data_slope['Rank']==1]    
+  
+# Creating a new data set that contains only latest 2-3 rows    
+data_slope_f = data_slope_filtered.tail(4)
+data_slope_f
+#data_slope
+#List_Supp
+
+# Merging the slope dataset with original data and bringing Slope column there
+
+data = data.merge(data_slope_f[['Sequence','Slope']], how = 'left', left_on ='Sequence', right_on ='Sequence')
+
+# creating a new column which has Y value for the Resistance & Slope line
+# calculating the value of c by taking the min +ve value of slope column, to be later used for Resistance line
+
+slope4resistance = data['Slope'][data['Slope']>0].min()
+X_value = data['Slope'].idxmin()
+Y_value = float(data['Close'][data['Slope'] ==slope4resistance])
+c_resistance =Y_value-slope4resistance*X_value
+data['Resistance_Line']= slope4resistance*data['Sequence']+c_resistance
+
+slope4resistance2 =  data['Slope'][data['Slope']>0].max()
+X_value2 = data['Slope'].idxmax()
+Y_value2 = float(data['Close'][data['Slope'] ==slope4resistance2])
+c_resistance2 =Y_value2-slope4resistance2*X_value2
+data['Resistance_Line2']= slope4resistance2*data['Sequence']+c_resistance2
+
+slope4support = data['Slope'][data['Slope']<0].min()
+X_value3 = data['Slope'].idxmin()
+Y_value3 = float(data['Close'][data['Slope'] ==slope4support])
+c_support =Y_value3-slope4support*X_value3
+data['Support_Line']= slope4support*data['Sequence']+c_support
+
+fig, ax1 = plt.subplots(figsize = (20,8))
+ax1.bar(data['Date'],data['Volume'], color='lightblue')
+ax1.set_yticklabels(['{:,}'.format(int(x)) for x in ax1.get_yticks().tolist()])
+ax2=ax1.twinx()
+ax2.plot(data['Date'],data['Close'], color = 'blue')
+ax3=ax1.twinx()
+ax3=ax2.twiny()
+ax3.plot(data['Date'],data['50_DMA'], color ='green')
+ax4=ax1.twinx()
+ax4=ax2.twiny()
+ax4.plot(data['Date'],data['200_DMA'], color ='yellow')
+ax5=ax1.twinx()
+ax5=ax2.twiny()
+ax5.plot(data['Date'],data['Resistance_Line'], color='red')
+ax6=ax1.twinx()
+ax6=ax2.twiny()
+ax6.plot(data['Date'],data['Resistance_Line2'], color='orange')
+ax7=ax1.twinx()
+ax7=ax2.twiny()
+ax7.plot(data['Date'],data['Support_Line'], color='brown')
+plt.show()
